@@ -13,14 +13,13 @@ export async function POST(req: Request) {
 
   const response = new twilio.twiml.VoiceResponse();
   const to = toE164(params.To ?? "");
-  const row = Number.parseInt(params.row ?? "", 10);
   if (!to) {
     response.say({ language: "pt-BR" }, "Número inválido.");
     return twiml(response.toString());
   }
 
   const recordingCallback = new URL(`${baseUrl()}/api/recording`);
-  if (Number.isInteger(row)) recordingCallback.searchParams.set("row", String(row));
+  recordingCallback.searchParams.set("to", to);
 
   const dial = response.dial({
     callerId: env("TWILIO_CALLER_ID"),

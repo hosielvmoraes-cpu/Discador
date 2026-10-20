@@ -1,34 +1,45 @@
 # Discador Stronix
 
-Discador web para SDRs: lê os leads de uma planilha do Google, liga pelo navegador com um clique,
-abre o WhatsApp do lead, grava a ligação no Google Drive e escreve o resultado de volta na planilha.
-O SDR não digita nenhum número.
+Discador web para SDRs: o SDR sobe a lista exportada do Stronilead (CSV), liga pelo navegador com um clique,
+abre o WhatsApp do lead, e cada contato fica registrado numa planilha de histórico no Google, com a gravação
+da ligação no Google Drive. O SDR não digita nenhum número.
 
 ## Como funciona
 
 1. O SDR entra com o nome dele e a senha da equipe.
-2. A fila do turno mostra os leads novos e os que devem receber nova tentativa (não atendeu, caixa postal,
-   retornar depois ou WhatsApp enviado em outro dia, até `MAX_ATTEMPTS` tentativas).
-3. **Ligar** (`L`) chama o lead pela Twilio com o número oficial da Stronix como identificador.
+2. Clica em **Subir lista (CSV)** e escolhe o arquivo exportado do Stronilead. O arquivo é lido no próprio
+   navegador e fica salvo nele até a próxima lista; o CPF nunca é lido.
+3. A fila mostra os leads da lista que ainda devem ser contatados, conforme o histórico: fica fora quem já foi
+   contatado hoje, quem chegou a `MAX_ATTEMPTS` tentativas e quem teve resultado final (Reunião marcada,
+   Número errado ou Não ligar mais), mesmo que apareça de novo numa lista futura.
+4. O cartão do lead mostra as demais colunas do arquivo (motivo da perda, etapa, origem, consultor…) e o último
+   contato registrado.
+5. **Ligar** (`L`) chama o lead pela Twilio com o número oficial da Stronix como identificador.
    Ao atender, o lead ouve o aviso de gravação e é conectado ao SDR.
-4. **WhatsApp** (`W`) abre a conversa com uma mensagem pronta.
-5. O SDR escolhe o resultado (`1` a `8`), escreve uma observação e clica em **Salvar e próximo** (`Enter`).
+6. **WhatsApp** (`W`) abre a conversa com uma mensagem pronta.
+7. O SDR escolhe o resultado (`1` a `8`), escreve uma observação e clica em **Salvar e próximo** (`Enter`).
    Com "Ligar para o próximo automaticamente" ligado, o próximo lead é chamado em seguida.
-6. Quando a gravação termina, o MP3 vai para a pasta do Google Drive e o link aparece na coluna Gravação.
+8. Quando a gravação termina, o MP3 vai para a pasta do Google Drive e o link aparece no histórico.
 
 Outros atalhos: `D` ou `Esc` desliga, `M` deixa no mudo.
 
-## Planilha
+## Arquivo de leads
 
-Uma aba chamada `Leads` (ou o nome em `GOOGLE_SHEET_TAB`). Basta preencher as colunas A e B; o discador
-cria o cabeçalho e preenche as demais.
+CSV separado por `;` ou `,`, com cabeçalho. O discador procura:
 
-| A | B | C | D | E | F | G | H |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Nome | Telefone | Status | Data | Observação | Gravação | SDR | Tentativas |
+- **Nome**: coluna `Nome`.
+- **Telefone**: a primeira preenchida entre `WhatsApp`, `Telefone`, `Celular` e `Telefone do responsável`,
+  em qualquer formato brasileiro, como `(51) 9 9829-0439`.
 
-O telefone pode estar em qualquer formato brasileiro, como `(11) 98765-4321` ou `11987654321`.
-Linhas com telefone inválido ficam fora da fila e aparecem no contador do topo.
+As demais colunas aparecem no cartão do lead, exceto `CPF`. Linhas com telefone inválido ficam fora da fila e
+aparecem no contador do topo. O export de perdas do Stronilead já está nesse formato.
+
+## Planilha de histórico
+
+Uma planilha do Google, vazia no começo. O discador cria duas abas:
+
+- **Histórico**: uma linha por contato, com Data, Nome, Telefone, Status, Observação, SDR, Gravação e ID da ligação.
+- **Gravações**: o link de cada gravação, ligado ao contato pelo ID da ligação.
 
 ## Configuração
 
@@ -36,7 +47,7 @@ Copie `.env.example` para `.env.local` e preencha conforme os passos abaixo.
 
 ### 1. Google (planilha e gravações)
 
-1. Crie a planilha de leads e uma pasta no Drive para as gravações. Os IDs estão nas URLs:
+1. Crie a planilha de histórico (vazia) e uma pasta no Drive para as gravações. Os IDs estão nas URLs:
    `docs.google.com/spreadsheets/d/<GOOGLE_SHEET_ID>/...` e `drive.google.com/drive/folders/<GOOGLE_DRIVE_FOLDER_ID>`.
 2. No [Google Cloud Console](https://console.cloud.google.com/), crie um projeto e ative a
    **Google Sheets API** e a **Google Drive API**.

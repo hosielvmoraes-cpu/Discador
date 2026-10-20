@@ -1,35 +1,41 @@
 import { describe, expect, it } from "vitest";
-import { type Lead, formatDate, queue } from "./leads";
+import { type Lead, type PhoneHistory, formatDate, queue } from "./leads";
 
 const now = new Date("2026-10-20T15:00:00Z");
 const today = formatDate(now);
 const yesterday = formatDate(new Date("2026-10-19T15:00:00Z"));
 
-function lead(overrides: Partial<Lead>): Lead {
-  return {
-    row: 2, name: "Ana", phone: "11987654321", e164: "+5511987654321",
-    status: "", date: "", note: "", recording: "", sdr: "", attempts: 0,
-    ...overrides,
-  };
+function lead(id: number, e164: string | null): Lead {
+  return { id, name: `Lead ${id}`, phone: e164 ?? "123", e164, details: [] };
+}
+
+function past(lastStatus: string, lastDate: string, attempts = 1): PhoneHistory {
+  return { attempts, lastStatus, lastDate, lastNote: "" };
 }
 
 describe("queue", () => {
-  it("inclui leads novos e tentativas de outro dia", () => {
-    const leads = [
-      lead({ row: 2 }),
-      lead({ row: 3, status: "Não atendeu", date: yesterday, attempts: 1 }),
-    ];
-    expect(queue(leads, 3, now).map((l) => l.row)).toEqual([2, 3]);
+  it("inclui leads novos e novas tentativas de outro dia", () => {
+    const leads = [lead(0, "+5551900000001"), lead(1, "+5551900000002")];
+    const history = { "+5551900000002": past("Não atendeu", yesterday) };
+    expect(queue(leads, history, 3, now).map((l) => l.id)).toEqual([0, 1]);
   });
 
-  it("deixa fora quem já foi tentado hoje, finalizado, inválido ou no limite", () => {
+  it("deixa fora contatados hoje, encerrados, inválidos, no limite e repetidos", () => {
     const leads = [
-      lead({ row: 2, status: "Não atendeu", date: today, attempts: 1 }),
-      lead({ row: 3, status: "Reunião marcada", date: yesterday, attempts: 1 }),
-      lead({ row: 4, e164: null }),
-      lead({ row: 5, status: "Caixa postal", date: yesterday, attempts: 3 }),
-      lead({ row: 6, status: "Não ligar mais", date: yesterday, attempts: 1 }),
+      lead(0, "+5551900000001"),
+      lead(1, "+5551900000002"),
+      lead(2, null),
+      lead(3, "+5551900000003"),
+      lead(4, "+5551900000004"),
+      lead(5, "+5551900000005"),
+      lead(6, "+5551900000005"),
     ];
-    expect(queue(leads, 3, now)).toEqual([]);
+    const history = {
+      "+5551900000001": past("Não atendeu", today),
+      "+5551900000002": past("Reunião marcada", yesterday),
+      "+5551900000003": past("Caixa postal", yesterday, 3),
+      "+5551900000004": past("Não ligar mais", yesterday),
+    };
+    expect(queue(leads, history, 3, now).map((l) => l.id)).toEqual([5]);
   });
 });

@@ -1,8 +1,10 @@
 import { Readable } from "node:stream";
 import { google } from "googleapis";
 import { env } from "./env";
-import { HEADERS, type Lead } from "./leads";
-import { toE164 } from "./phone";
+import { HISTORY_HEADERS, RECORDING_HEADERS, type PhoneHistory } from "./leads";
+
+const HISTORY_TAB = "Histórico";
+const RECORDINGS_TAB = "Gravações";
 
 function auth() {
   const client = new google.auth.OAuth2(env("GOOGLE_CLIENT_ID"), env("GOOGLE_CLIENT_SECRET"));
@@ -10,63 +12,95 @@ function auth() {
   return client;
 }
 
-function tab(): string {
-  return process.env.GOOGLE_SHEET_TAB || "Leads";
-}
-
 function sheets() {
   return google.sheets({ version: "v4", auth: auth() });
 }
 
-export async function readLeads(): Promise<Lead[]> {
+/** Cria as abas Histórico e Gravações com cabeçalho, se ainda não existirem. */
+async function ensureTabs() {
   const api = sheets();
   const spreadsheetId = env("GOOGLE_SHEET_ID");
-  const res = await api.spreadsheets.values.get({ spreadsheetId, range: `${tab()}!A1:H` });
-  const rows = res.data.values ?? [];
+  const meta = await api.spreadsheets.get({ spreadsheetId, fields: "sheets.properties.title" });
+  const existing = new Set(meta.data.sheets?.map((s) => s.properties?.title));
+  const missing = [
+    [HISTORY_TAB, HISTORY_HEADERS],
+    [RECORDINGS_TAB, RECORDING_HEADERS],
+  ].filter(([title]) => !existing.has(title as string)) as [string, string[]][];
+  if (!missing.length) return;
 
-  const header = rows[0] ?? [];
-  if (HEADERS.some((h, i) => header[i] !== h)) {
-    await api.spreadsheets.values.update({
-      spreadsheetId,
-      range: `${tab()}!A1:H1`,
+  await api.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: { requests: missing.map(([title]) => ({ addSheet: { properties: { title } } })) },
+  });
+  await api.spreadsheets.values.batchUpdate({
+    spreadsheetId,
+    requestBody: {
       valueInputOption: "RAW",
-      requestBody: { values: [HEADERS] },
-    });
-  }
-
-  return rows.slice(1).flatMap((cells, i) => {
-    const [name = "", phone = "", status = "", date = "", note = "", recording = "", sdr = "", attempts = ""] =
-      cells.map((c) => String(c ?? ""));
-    if (!name && !phone) return [];
-    return [{
-      row: i + 2,
-      name,
-      phone,
-      e164: toE164(phone),
-      status,
-      date,
-      note,
-      recording,
-      sdr,
-      attempts: Number.parseInt(attempts, 10) || 0,
-    }];
+      data: missing.map(([title, headers]) => ({ range: `${title}!A1`, values: [headers] })),
+    },
   });
 }
 
-export async function readCell(row: number, column: string): Promise<string> {
-  const res = await sheets().spreadsheets.values.get({
+async function readTab(tab: string): Promise<string[][]> {
+  await ensureTabs();
+  const res = await sheets().spreadsheets.values.get({ spreadsheetId: env("GOOGLE_SHEET_ID"), range: `${tab}!A2:H` });
+  return (res.data.values ?? []).map((row) => row.map((c) => String(c ?? "")));
+}
+
+async function append(tab: string, values: string[]) {
+  await ensureTabs();
+  await sheets().spreadsheets.values.append({
     spreadsheetId: env("GOOGLE_SHEET_ID"),
-    range: `${tab()}!${column}${row}`,
+    range: `${tab}!A1`,
+    valueInputOption: "RAW",
+    insertDataOption: "INSERT_ROWS",
+    requestBody: { values: [values] },
   });
-  return String(res.data.values?.[0]?.[0] ?? "");
 }
 
-export async function writeCells(row: number, from: string, to: string, values: (string | number)[]) {
+/** Tentativas e último contato de cada telefone (E.164), em ordem de registro. */
+export async function readHistory(): Promise<Record<string, PhoneHistory>> {
+  const summary: Record<string, PhoneHistory> = {};
+  for (const [date = "", , phone = "", status = "", note = ""] of await readTab(HISTORY_TAB)) {
+    if (!phone) continue;
+    const prev = summary[phone];
+    summary[phone] = { attempts: (prev?.attempts ?? 0) + 1, lastStatus: status, lastDate: date, lastNote: note };
+  }
+  return summary;
+}
+
+export type HistoryEntry = {
+  date: string;
+  name: string;
+  phone: string;
+  status: string;
+  note: string;
+  sdr: string;
+  callSid: string;
+};
+
+/** Registra um contato. Se a gravação dessa ligação já chegou, o link entra junto. */
+export async function appendHistory(entry: HistoryEntry) {
+  let link = "";
+  if (entry.callSid) {
+    const recording = (await readTab(RECORDINGS_TAB)).find(([, sid]) => sid === entry.callSid);
+    link = recording?.[2] ?? "";
+  }
+  await append(HISTORY_TAB, [
+    entry.date, entry.name, entry.phone, entry.status, entry.note, entry.sdr, link, entry.callSid,
+  ]);
+}
+
+/** Guarda o link da gravação e preenche a coluna Gravação do contato, se ele já foi registrado. */
+export async function saveRecordingLink(date: string, callSid: string, link: string) {
+  await append(RECORDINGS_TAB, [date, callSid, link]);
+  const rowIdx = (await readTab(HISTORY_TAB)).findIndex((row) => row[7] === callSid);
+  if (rowIdx < 0) return;
   await sheets().spreadsheets.values.update({
     spreadsheetId: env("GOOGLE_SHEET_ID"),
-    range: `${tab()}!${from}${row}:${to}${row}`,
+    range: `${HISTORY_TAB}!G${rowIdx + 2}`,
     valueInputOption: "RAW",
-    requestBody: { values: [values] },
+    requestBody: { values: [[link]] },
   });
 }
 

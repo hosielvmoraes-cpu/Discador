@@ -11,23 +11,28 @@ export const STATUSES = [
 
 export type Status = (typeof STATUSES)[number];
 
-/** Resultados que voltam para a fila em outro dia, até o limite de tentativas. */
-export const RETRY_STATUSES: readonly string[] = ["Não atendeu", "Caixa postal", "Retornar depois", "WhatsApp enviado"];
+/** Resultados que tiram o número da fila de vez, mesmo que ele volte em outro arquivo. */
+export const FINAL_STATUSES: readonly string[] = ["Não ligar mais", "Número errado", "Reunião marcada"];
 
 export type Lead = {
-  row: number;
+  id: number;
   name: string;
   phone: string;
   e164: string | null;
-  status: string;
-  date: string;
-  note: string;
-  recording: string;
-  sdr: string;
-  attempts: number;
+  /** Demais colunas do arquivo (motivo, etapa, origem…), mostradas para o SDR. */
+  details: [string, string][];
 };
 
-export const HEADERS = ["Nome", "Telefone", "Status", "Data", "Observação", "Gravação", "SDR", "Tentativas"];
+/** Resumo do histórico de um telefone, montado a partir da aba Histórico. */
+export type PhoneHistory = {
+  attempts: number;
+  lastStatus: string;
+  lastDate: string;
+  lastNote: string;
+};
+
+export const HISTORY_HEADERS = ["Data", "Nome", "Telefone", "Status", "Observação", "SDR", "Gravação", "ID da ligação"];
+export const RECORDING_HEADERS = ["Data", "ID da ligação", "Link"];
 
 /** Data no formato gravado na planilha (dd/mm/aaaa hh:mm, horário de Brasília). */
 export function formatDate(date: Date): string {
@@ -38,13 +43,24 @@ export function formatDate(date: Date): string {
   }).format(date);
 }
 
-/** Leads que devem ser ligados agora: nunca contatados, ou para nova tentativa em outro dia. */
-export function queue(leads: Lead[], maxAttempts: number, now = new Date()): Lead[] {
+/**
+ * Leads que devem ser ligados agora: telefone válido, sem resultado final no histórico,
+ * sem contato hoje e abaixo do limite de tentativas. Telefones repetidos no arquivo entram uma vez só.
+ */
+export function queue(
+  leads: Lead[],
+  history: Record<string, PhoneHistory>,
+  maxAttempts: number,
+  now = new Date(),
+): Lead[] {
   const today = formatDate(now).slice(0, 10);
+  const seen = new Set<string>();
   return leads.filter((lead) => {
-    if (!lead.e164) return false;
-    if (!lead.status) return true;
-    if (!RETRY_STATUSES.includes(lead.status)) return false;
-    return lead.attempts < maxAttempts && !lead.date.startsWith(today);
+    if (!lead.e164 || seen.has(lead.e164)) return false;
+    seen.add(lead.e164);
+    const past = history[lead.e164];
+    if (!past) return true;
+    if (FINAL_STATUSES.includes(past.lastStatus)) return false;
+    return past.attempts < maxAttempts && !past.lastDate.startsWith(today);
   });
 }

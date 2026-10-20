@@ -1,13 +1,14 @@
 import twilio from "twilio";
 import { env } from "@/lib/env";
-import { uploadRecording, writeCells } from "@/lib/google";
+import { saveRecordingLink, uploadRecording } from "@/lib/google";
+import { formatDate } from "@/lib/leads";
 import { verifiedTwilioParams } from "@/lib/twilio";
 
 export const maxDuration = 60;
 
 /**
  * Callback da Twilio quando uma gravação termina: baixa o MP3, envia para a pasta do Google Drive,
- * escreve o link na coluna Gravação do lead e apaga a cópia da Twilio.
+ * liga o link ao contato pelo ID da ligação e apaga a cópia da Twilio.
  */
 export async function POST(req: Request) {
   const params = await verifiedTwilioParams(req);
@@ -21,12 +22,11 @@ export async function POST(req: Request) {
   });
   if (!audio.ok) return new Response("Falha ao baixar a gravação", { status: 502 });
 
-  const row = Number.parseInt(new URL(req.url).searchParams.get("row") ?? "", 10);
+  const to = new URL(req.url).searchParams.get("to")?.replace(/\D/g, "") ?? "";
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const name = `${stamp}${Number.isInteger(row) ? `_linha-${row}` : ""}_${params.RecordingSid}.mp3`;
-  const link = await uploadRecording(name, Buffer.from(await audio.arrayBuffer()));
+  const link = await uploadRecording(`${stamp}_${to}_${params.RecordingSid}.mp3`, Buffer.from(await audio.arrayBuffer()));
 
-  if (Number.isInteger(row) && row >= 2) await writeCells(row, "F", "F", [link]);
+  await saveRecordingLink(formatDate(new Date()), params.CallSid ?? "", link);
   await twilio(accountSid, authToken).recordings(params.RecordingSid).remove();
   return new Response(null, { status: 204 });
 }

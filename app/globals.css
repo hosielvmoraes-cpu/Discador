@@ -40,3 +40,7 @@ textarea { min-height: 70px; resize: vertical; }
 .toggle input { width: auto; }
 .login { max-width: 360px; margin: 80px auto; display: grid; gap: 12px; }
 kbd { font-size: 12px; border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; color: var(--muted); }
+.details { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px 16px; margin: 0 0 16px; }
+.details dt { font-size: 12px; color: var(--muted); }
+.details dd { margin: 0; font-size: 14px; }
+.btn-call kbd, .btn-hangup kbd, .btn-whatsapp kbd, .btn-primary kbd { color: inherit; border-color: currentColor; opacity: 0.8; }

@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Call, Device } from "@twilio/voice-sdk";
-import { STATUSES, type Lead } from "@/lib/leads";
+import { importLeads } from "@/lib/csv";
+import { STATUSES, formatDate, queue, type Lead, type PhoneHistory } from "@/lib/leads";
 import { fillTemplate, whatsappLink } from "@/lib/phone";
 
 type CallState = "idle" | "connecting" | "ringing" | "open" | "ended";
@@ -16,6 +17,7 @@ const CALL_LABELS: Record<CallState, string> = {
 };
 
 const WHATSAPP_TEMPLATE = process.env.NEXT_PUBLIC_WHATSAPP_MESSAGE ?? "Olá {nome}, tudo bem? Aqui é {sdr} da Stronix.";
+const STORAGE_KEY = "discador:lista";
 
 function formatSeconds(total: number): string {
   const m = Math.floor(total / 60);
@@ -23,10 +25,21 @@ function formatSeconds(total: number): string {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
+/** Lê o arquivo como UTF-8 e, se vier com caracteres quebrados, como Windows-1252 (Excel antigo). */
+async function readText(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  const utf8 = new TextDecoder("utf-8").decode(buffer);
+  return utf8.includes("�") ? new TextDecoder("windows-1252").decode(buffer) : utf8;
+}
+
+type StoredList = { fileName: string; leads: Lead[] };
+
 export default function Dialer() {
   const [sdr, setSdr] = useState("");
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [summary, setSummary] = useState({ total: 0, invalid: 0 });
+  const [list, setList] = useState<StoredList | null>(null);
+  const [history, setHistory] = useState<Record<string, PhoneHistory>>({});
+  const [maxAttempts, setMaxAttempts] = useState(3);
+  const [skipped, setSkipped] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [callState, setCallState] = useState<CallState>("idle");
@@ -40,13 +53,23 @@ export default function Dialer() {
 
   const deviceRef = useRef<Device | null>(null);
   const callRef = useRef<Call | null>(null);
-  const current = leads[0];
+  const callSidRef = useRef("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const loadLeads = useCallback(async () => {
+  const pending = useMemo(() => {
+    const q = queue(list?.leads ?? [], history, maxAttempts);
+    // Leads pulados vão para o fim da fila, na ordem em que foram pulados.
+    const rank = (lead: Lead) => skipped.indexOf(lead.id);
+    return [...q].sort((a, b) => rank(a) - rank(b));
+  }, [list, history, maxAttempts, skipped]);
+  const current = pending[0];
+  const invalid = list?.leads.filter((l) => !l.e164).length ?? 0;
+
+  const loadHistory = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/leads", { cache: "no-store" });
+      const res = await fetch("/api/history", { cache: "no-store" });
       if (res.status === 401) {
         window.location.href = "/login";
         return;
@@ -54,18 +77,44 @@ export default function Dialer() {
       if (!res.ok) throw new Error();
       const data = await res.json();
       setSdr(data.sdr);
-      setLeads(data.queue);
-      setSummary({ total: data.total, invalid: data.invalid });
+      setMaxAttempts(data.maxAttempts);
+      setHistory(data.history);
     } catch {
-      setError("Não foi possível ler a planilha de leads.");
+      setError("Não foi possível ler o histórico de contatos.");
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    loadLeads();
-  }, [loadLeads]);
+    loadHistory();
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) setList(JSON.parse(stored));
+    } catch {
+      // Sem lista salva: o SDR sobe o arquivo de novo.
+    }
+  }, [loadHistory]);
+
+  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setError("");
+    const leads = importLeads(await readText(file));
+    if (!leads.length || leads.every((l) => !l.e164)) {
+      setError("Não encontrei leads com telefone nesse arquivo. Ele precisa de uma coluna Nome e uma de WhatsApp ou Telefone.");
+      return;
+    }
+    const next = { fileName: file.name, leads };
+    setList(next);
+    setSkipped([]);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // A lista continua na tela; só não sobrevive a recarregar a página.
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -108,12 +157,17 @@ export default function Dialer() {
     setSeconds(0);
     setMuted(false);
     setCallState("connecting");
+    callSidRef.current = "";
     try {
-      const c = await device.connect({ params: { To: current.e164, row: String(current.row) } });
+      const c = await device.connect({ params: { To: current.e164 } });
       callRef.current = c;
       c.on("ringing", () => setCallState("ringing"));
-      c.on("accept", () => setCallState("open"));
+      c.on("accept", () => {
+        callSidRef.current = c.parameters.CallSid ?? "";
+        setCallState("open");
+      });
       const finish = () => {
+        callSidRef.current ||= c.parameters.CallSid ?? "";
         callRef.current = null;
         setCallState("ended");
       };
@@ -147,34 +201,39 @@ export default function Dialer() {
     setNote("");
     setSeconds(0);
     setCallState("idle");
+    callSidRef.current = "";
   };
 
   const save = useCallback(async () => {
-    if (!current || !status || saving || callRef.current) return;
+    if (!current?.e164 || !status || saving || callRef.current) return;
     setSaving(true);
     setError("");
     try {
-      const res = await fetch(`/api/leads/${current.row}`, {
-        method: "PATCH",
+      const res = await fetch("/api/results", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status, note }),
+        body: JSON.stringify({ name: current.name, phone: current.e164, status, note, callSid: callSidRef.current }),
       });
       if (!res.ok) throw new Error();
-      setLeads((list) => list.slice(1));
+      const e164 = current.e164;
+      setHistory((h) => ({
+        ...h,
+        [e164]: { attempts: (h[e164]?.attempts ?? 0) + 1, lastStatus: status, lastDate: formatDate(new Date()), lastNote: note },
+      }));
       resetLead();
       if (autoDial) setTimeout(() => document.getElementById("btn-call")?.click(), 1500);
     } catch {
-      setError("Não foi possível salvar o resultado na planilha.");
+      setError("Não foi possível salvar o resultado no histórico.");
     } finally {
       setSaving(false);
     }
   }, [current, status, note, saving, autoDial]);
 
   const skip = useCallback(() => {
-    if (callRef.current) return;
-    setLeads((list) => (list.length > 1 ? [...list.slice(1), list[0]] : list));
+    if (callRef.current || !current) return;
+    setSkipped((s) => [...s.filter((id) => id !== current.id), current.id]);
     resetLead();
-  }, []);
+  }, [current]);
 
   const openWhatsapp = useCallback(() => {
     if (!current?.e164) return;
@@ -209,6 +268,7 @@ export default function Dialer() {
   }
 
   const inCall = callState === "connecting" || callState === "ringing" || callState === "open";
+  const past = current?.e164 ? history[current.e164] : undefined;
 
   return (
     <main>
@@ -217,12 +277,17 @@ export default function Dialer() {
           <h1>Discador Stronix</h1>
           <span className="muted">
             {sdr && `${sdr} · `}
-            {leads.length} na fila de {summary.total} leads
-            {summary.invalid > 0 && ` · ${summary.invalid} com telefone inválido`}
+            {list
+              ? `${list.fileName}: ${pending.length} na fila de ${list.leads.length} leads${invalid ? ` · ${invalid} com telefone inválido` : ""}`
+              : "Nenhuma lista carregada"}
           </span>
         </div>
         <div className="actions" style={{ margin: 0 }}>
-          <button onClick={loadLeads} disabled={loading || inCall}>Recarregar planilha</button>
+          <input ref={fileInputRef} type="file" accept=".csv,text/csv" hidden onChange={onFile} />
+          <button className="btn-primary" onClick={() => fileInputRef.current?.click()} disabled={inCall}>
+            Subir lista (CSV)
+          </button>
+          <button onClick={loadHistory} disabled={loading || inCall}>Atualizar histórico</button>
           <button onClick={logout} disabled={inCall}>Sair</button>
         </div>
       </header>
@@ -232,17 +297,29 @@ export default function Dialer() {
       <div className="layout">
         <section className="card">
           {loading ? (
-            <p className="muted">Carregando leads…</p>
+            <p className="muted">Carregando histórico…</p>
+          ) : !list ? (
+            <p>Clique em <strong>Subir lista (CSV)</strong> e escolha o arquivo exportado do Stronilead.</p>
           ) : !current ? (
-            <p>Nenhum lead na fila. Adicione nomes e telefones na planilha e clique em Recarregar planilha.</p>
+            <p>Todos os leads desta lista já foram contatados hoje ou encerrados. Suba uma nova lista para continuar.</p>
           ) : (
             <>
               <p className="lead-name">{current.name || "Sem nome"}</p>
-              <p className="lead-phone">{current.e164}</p>
-              {current.status && (
+              <p className="lead-phone">{current.phone}</p>
+              {current.details.length > 0 && (
+                <dl className="details">
+                  {current.details.map(([label, value]) => (
+                    <div key={label}>
+                      <dt>{label}</dt>
+                      <dd>{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+              {past && (
                 <p className="muted">
-                  Último contato: {current.status} em {current.date} ({current.attempts} tentativa{current.attempts === 1 ? "" : "s"})
-                  {current.note && ` · ${current.note}`}
+                  Último contato: {past.lastStatus} em {past.lastDate} ({past.attempts} tentativa{past.attempts === 1 ? "" : "s"})
+                  {past.lastNote && ` · ${past.lastNote}`}
                 </p>
               )}
 
@@ -258,7 +335,7 @@ export default function Dialer() {
                     <button onClick={toggleMute}>{muted ? "Ativar microfone" : "Mudo"} <kbd>M</kbd></button>
                   </>
                 ) : (
-                  <button id="btn-call" className="btn-call" onClick={call} disabled={!ready || !current.e164}>
+                  <button id="btn-call" className="btn-call" onClick={call} disabled={!ready}>
                     Ligar <kbd>L</kbd>
                   </button>
                 )}
@@ -289,12 +366,12 @@ export default function Dialer() {
         </section>
 
         <aside className="card">
-          <strong>Fila do turno</strong>
+          <strong>Fila</strong>
           <ul className="queue">
-            {leads.map((lead, i) => (
-              <li key={lead.row} className={i === 0 ? "current" : ""}>
+            {pending.map((lead, i) => (
+              <li key={lead.id} className={i === 0 ? "current" : ""}>
                 <span>{lead.name || "Sem nome"}</span>
-                <span className="muted">{lead.status || "Novo"}</span>
+                <span className="muted">{(lead.e164 && history[lead.e164]?.lastStatus) || "Novo"}</span>
               </li>
             ))}
           </ul>
