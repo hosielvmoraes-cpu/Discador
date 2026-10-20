@@ -6,7 +6,18 @@ import { HISTORY_HEADERS, RECORDING_HEADERS, type PhoneHistory } from "./leads";
 const HISTORY_TAB = "Histórico";
 const RECORDINGS_TAB = "Gravações";
 
+/**
+ * Conta de serviço (GOOGLE_SERVICE_ACCOUNT_EMAIL + GOOGLE_PRIVATE_KEY) quando configurada: basta compartilhar a
+ * planilha com o e-mail dela. Senão, OAuth com refresh token (necessário para enviar gravações ao Drive pessoal).
+ */
 function auth() {
+  if (process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL) {
+    return new google.auth.JWT({
+      email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+      key: env("GOOGLE_PRIVATE_KEY").replace(/\\n/g, "\n"),
+      scopes: ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"],
+    });
+  }
   const client = new google.auth.OAuth2(env("GOOGLE_CLIENT_ID"), env("GOOGLE_CLIENT_SECRET"));
   client.setCredentials({ refresh_token: env("GOOGLE_REFRESH_TOKEN") });
   return client;

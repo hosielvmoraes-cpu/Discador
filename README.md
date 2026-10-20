@@ -55,21 +55,19 @@ Uma planilha do Google, vazia no começo. O discador cria duas abas:
 
 Copie `.env.example` para `.env.local` e preencha conforme os passos abaixo.
 
-### 1. Google (planilha e gravações)
+### 1. Google (planilha de histórico)
 
-1. Crie a planilha de histórico (vazia) e uma pasta no Drive para as gravações. Os IDs estão nas URLs:
-   `docs.google.com/spreadsheets/d/<GOOGLE_SHEET_ID>/...` e `drive.google.com/drive/folders/<GOOGLE_DRIVE_FOLDER_ID>`.
-2. No [Google Cloud Console](https://console.cloud.google.com/), crie um projeto e ative a
-   **Google Sheets API** e a **Google Drive API**.
-3. Configure a tela de consentimento OAuth e adicione a conta dona da planilha como usuário de teste
-   (ou use o tipo "Interno" se for Google Workspace).
-4. Crie uma credencial **ID do cliente OAuth** do tipo **App para computador** e copie o ID e a chave secreta.
-5. Gere o refresh token, entrando com a conta dona da planilha e da pasta:
+1. Crie a planilha de histórico (vazia). O ID está na URL: `docs.google.com/spreadsheets/d/<GOOGLE_SHEET_ID>/...`.
+2. No [Google Cloud Console](https://console.cloud.google.com/), crie um projeto e ative a **Google Sheets API**.
+3. Em **IAM e administrador → Contas de serviço**, crie uma conta de serviço (sem papéis) e, na aba **Chaves**,
+   adicione uma chave do tipo JSON. Do arquivo baixado, use `client_email` em `GOOGLE_SERVICE_ACCOUNT_EMAIL`
+   e `private_key` em `GOOGLE_PRIVATE_KEY`.
+4. Compartilhe a planilha com o `client_email` da conta de serviço, como **Editor**.
 
-   ```bash
-   npm install
-   GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=... npm run google-auth
-   ```
+No modo `twilio`, as gravações vão para o seu Drive pessoal, e uma conta de serviço não pode gravar nele. Nesse
+caso, use OAuth: ative também a **Google Drive API**, crie um **ID do cliente OAuth** do tipo
+**App para computador**, publique o app na tela de consentimento (em modo de teste o token expira em 7 dias) e gere
+o refresh token com `GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=... npm run google-auth`.
 
 ### 2. Twilio (telefonia, só para `CALL_MODE=twilio`)
 
