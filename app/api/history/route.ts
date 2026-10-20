@@ -11,6 +11,7 @@ export async function GET() {
   return NextResponse.json({
     sdr,
     maxAttempts: Number(process.env.MAX_ATTEMPTS) || 3,
+    callMode: process.env.CALL_MODE === "twilio" ? "twilio" : "celular",
     history: await readHistory(),
   });
 }

@@ -14,12 +14,22 @@ da ligação no Google Drive. O SDR não digita nenhum número.
    Número errado ou Não ligar mais), mesmo que apareça de novo numa lista futura.
 4. O cartão do lead mostra as demais colunas do arquivo (motivo da perda, etapa, origem, consultor…) e o último
    contato registrado.
-5. **Ligar** (`L`) chama o lead pela Twilio com o número oficial da Stronix como identificador.
-   Ao atender, o lead ouve o aviso de gravação e é conectado ao SDR.
+5. **Ligar** (`L`) depende de `CALL_MODE`:
+   - `celular` (padrão, sem custo): o SDR usa o discador no celular da Stronix e o botão abre o discador do
+     aparelho com o número preenchido. A ligação sai pelo plano da operadora; a gravação fica com o gravador do
+     próprio celular (veja "Gravação no modo celular").
+   - `twilio`: liga pelo navegador com o número oficial como identificador. Ao atender, o lead ouve o aviso de
+     gravação e é conectado ao SDR.
 6. **WhatsApp** (`W`) abre a conversa com uma mensagem pronta.
 7. O SDR escolhe o resultado (`1` a `8`), escreve uma observação e clica em **Salvar e próximo** (`Enter`).
    Com "Ligar para o próximo automaticamente" ligado, o próximo lead é chamado em seguida.
-8. Quando a gravação termina, o MP3 vai para a pasta do Google Drive e o link aparece no histórico.
+8. No modo `twilio`, quando a gravação termina, o MP3 vai para a pasta do Google Drive e o link aparece no histórico.
+
+## Gravação no modo celular
+
+Ative a gravação automática de ligações no Android que tem o chip do número oficial e sincronize a pasta de
+gravações com o Google Drive (por exemplo, com o app Autosync). No modo celular, a coluna Gravação do histórico
+fica vazia; a gravação é encontrada pela data e pelo número do lead.
 
 Outros atalhos: `D` ou `Esc` desliga, `M` deixa no mudo.
 
@@ -61,7 +71,7 @@ Copie `.env.example` para `.env.local` e preencha conforme os passos abaixo.
    GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=... npm run google-auth
    ```
 
-### 2. Twilio (telefonia)
+### 2. Twilio (telefonia, só para `CALL_MODE=twilio`)
 
 1. Crie uma conta em [twilio.com](https://www.twilio.com/) e faça o upgrade da conta (a conta de teste só liga
    para números verificados).

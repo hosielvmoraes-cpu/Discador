@@ -7,6 +7,8 @@ import { STATUSES, formatDate, queue, type Lead, type PhoneHistory } from "@/lib
 import { fillTemplate, whatsappLink } from "@/lib/phone";
 
 type CallState = "idle" | "connecting" | "ringing" | "open" | "ended";
+/** "celular": o botão Ligar abre o discador do aparelho (sem custo). "twilio": liga pelo navegador com gravação automática. */
+type CallMode = "celular" | "twilio";
 
 const CALL_LABELS: Record<CallState, string> = {
   idle: "Pronto para ligar",
@@ -50,6 +52,7 @@ export default function Dialer() {
   const [saving, setSaving] = useState(false);
   const [autoDial, setAutoDial] = useState(false);
   const [ready, setReady] = useState(false);
+  const [callMode, setCallMode] = useState<CallMode | null>(null);
 
   const deviceRef = useRef<Device | null>(null);
   const callRef = useRef<Call | null>(null);
@@ -78,6 +81,7 @@ export default function Dialer() {
       const data = await res.json();
       setSdr(data.sdr);
       setMaxAttempts(data.maxAttempts);
+      setCallMode(data.callMode);
       setHistory(data.history);
     } catch {
       setError("Não foi possível ler o histórico de contatos.");
@@ -117,6 +121,7 @@ export default function Dialer() {
   }
 
   useEffect(() => {
+    if (callMode !== "twilio") return;
     let cancelled = false;
     async function fetchToken(): Promise<string> {
       const res = await fetch("/api/token", { cache: "no-store" });
@@ -141,8 +146,10 @@ export default function Dialer() {
     return () => {
       cancelled = true;
       deviceRef.current?.destroy();
+      deviceRef.current = null;
+      setReady(false);
     };
-  }, []);
+  }, [callMode]);
 
   useEffect(() => {
     if (callState !== "open") return;
@@ -151,6 +158,12 @@ export default function Dialer() {
   }, [callState]);
 
   const call = useCallback(async () => {
+    if (callMode === "celular") {
+      if (!current?.e164) return;
+      window.location.href = `tel:${current.e164}`;
+      setCallState("ended");
+      return;
+    }
     const device = deviceRef.current;
     if (!device || !current?.e164 || callRef.current) return;
     setError("");
@@ -183,7 +196,7 @@ export default function Dialer() {
       setCallState("idle");
       setError("Não foi possível ligar. Permita o uso do microfone no navegador.");
     }
-  }, [current]);
+  }, [current, callMode]);
 
   const hangup = useCallback(() => {
     callRef.current?.disconnect();
@@ -324,7 +337,9 @@ export default function Dialer() {
               )}
 
               <p className="call-status">
-                {CALL_LABELS[callState]}
+                {callMode === "celular" && callState === "ended"
+                  ? "Ligação aberta no celular: ao desligar, registre o resultado"
+                  : CALL_LABELS[callState]}
                 {(callState === "open" || callState === "ended") && seconds > 0 && ` · ${formatSeconds(seconds)}`}
               </p>
 
@@ -335,7 +350,7 @@ export default function Dialer() {
                     <button onClick={toggleMute}>{muted ? "Ativar microfone" : "Mudo"} <kbd>M</kbd></button>
                   </>
                 ) : (
-                  <button id="btn-call" className="btn-call" onClick={call} disabled={!ready}>
+                  <button id="btn-call" className="btn-call" onClick={call} disabled={callMode !== "celular" && !ready}>
                     Ligar <kbd>L</kbd>
                   </button>
                 )}
