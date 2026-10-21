@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Discador Stronix</string>
+    <string name="title_activity_main">Discador Stronix</string>
+    <string name="package_name">br.com.stronix.discador</string>
+    <string name="custom_url_scheme">br.com.stronix.discador</string>
+</resources>

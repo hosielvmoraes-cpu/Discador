@@ -1,0 +1,50 @@
+name: App Android
+
+on:
+  push:
+    branches: [main, mvp-discador]
+    paths: ["mobile/**", "lib/**", "app/globals.css", ".github/workflows/android.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    env:
+      BUILD_NUMBER: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Build web
+        working-directory: mobile
+        run: |
+          npm ci
+          npm run build
+          npx cap sync android
+      - name: Build APK
+        working-directory: mobile/android
+        run: ./gradlew assembleRelease --no-daemon
+      - name: Rename APK
+        run: cp mobile/android/app/build/outputs/apk/release/app-release.apk "discador-stronix-1.0.${BUILD_NUMBER}.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: discador-stronix-apk
+          path: discador-stronix-*.apk
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "app-v1.0.${BUILD_NUMBER}" discador-stronix-*.apk \
+            --target "${GITHUB_SHA}" --prerelease \
+            --title "Discador Stronix 1.0.${BUILD_NUMBER}" \
+            --notes "APK do app Android, gerado a partir de ${GITHUB_REF_NAME}."

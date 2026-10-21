@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "types": [],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["../*"],
+      "libphonenumber-js": ["./node_modules/libphonenumber-js"]
+    }
+  },
+  "include": ["src", "../lib/csv.ts", "../lib/leads.ts", "../lib/phone.ts"]
+}
