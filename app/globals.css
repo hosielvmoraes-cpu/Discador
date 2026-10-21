@@ -1,0 +1,56 @@
+:root {
+  --bg: #f5f6f8;
+  --card: #ffffff;
+  --text: #1c1f24;
+  --muted: #6b7280;
+  --border: #e3e5e9;
+  --primary: #1f6feb;
+  --call: #16a34a;
+  --hangup: #dc2626;
+  --whatsapp: #128c7e;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+main { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
+header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 20px; }
+h1 { font-size: 20px; margin: 0; }
+.muted { color: var(--muted); font-size: 14px; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+.layout { display: grid; grid-template-columns: 1fr 300px; gap: 16px; }
+@media (max-width: 760px) { .layout { grid-template-columns: 1fr; } }
+.lead-name { font-size: 26px; font-weight: 600; margin: 0 0 4px; }
+.lead-phone { font-size: 18px; color: var(--muted); margin: 0 0 16px; font-variant-numeric: tabular-nums; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+button, .btn { font: inherit; border: 1px solid var(--border); background: var(--card); color: var(--text); border-radius: 8px; padding: 10px 14px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-call { background: var(--call); border-color: var(--call); color: #fff; font-weight: 600; }
+.btn-hangup { background: var(--hangup); border-color: var(--hangup); color: #fff; font-weight: 600; }
+.btn-whatsapp { background: var(--whatsapp); border-color: var(--whatsapp); color: #fff; }
+.btn-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+.call-status { font-weight: 600; margin-bottom: 16px; }
+.results { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; margin: 12px 0; }
+.results button.selected { border-color: var(--primary); background: #e8f0fe; }
+textarea, input { font: inherit; width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+textarea { min-height: 70px; resize: vertical; }
+.queue { list-style: none; margin: 0; padding: 0; max-height: 480px; overflow-y: auto; }
+.queue li { padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 14px; display: flex; justify-content: space-between; gap: 8px; }
+.queue li.current { font-weight: 600; color: var(--primary); }
+.error { color: var(--hangup); margin: 8px 0; }
+.toggle { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.toggle input { width: auto; }
+.login { max-width: 360px; margin: 80px auto; display: grid; gap: 12px; }
+kbd { font-size: 12px; border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; color: var(--muted); }
+.details { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px 16px; margin: 0 0 16px; }
+.details dt { font-size: 12px; color: var(--muted); }
+.details dd { margin: 0; font-size: 14px; }
+.btn-call kbd, .btn-hangup kbd, .btn-whatsapp kbd, .btn-primary kbd { color: inherit; border-color: currentColor; opacity: 0.8; }
+@media (max-width: 760px) {
+  main { padding: 16px 12px; }
+  header { flex-direction: column; align-items: stretch; }
+  header .actions button { flex: 1; justify-content: center; }
+  kbd { display: none; }
+  .lead-name { font-size: 22px; }
+  .actions > .btn-call, .actions > .btn-whatsapp { flex: 1; justify-content: center; padding: 14px; font-size: 17px; }
+  .results { grid-template-columns: 1fr 1fr; }
+  .queue { max-height: 240px; }
+}
