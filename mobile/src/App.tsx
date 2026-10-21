@@ -2,11 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { importLeads } from "@/lib/csv";
 import { STATUSES, formatDate, queue, type Lead } from "@/lib/leads";
 import { fillTemplate, whatsappLink } from "@/lib/phone";
-import { openExternal, shareCsv } from "./native";
+import { findRecordings, openExternal, openRecording, shareCsv } from "./native";
 import {
   type Contact,
   type StoredList,
   contactsToCsv,
+  linkRecordings,
   loadContacts,
   loadList,
   loadSdr,
@@ -49,6 +50,9 @@ export default function App() {
   const [autoDial, setAutoDial] = useState(false);
   const [error, setError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const calledAtRef = useRef<string | undefined>(undefined);
+  const contactsRef = useRef(contacts);
+  contactsRef.current = contacts;
 
   const history = useMemo(() => summarize(contacts), [contacts]);
   const pending = useMemo(() => {
@@ -63,6 +67,31 @@ export default function App() {
   const todayContacts = contacts.filter((c) => c.date.startsWith(today));
 
   useEffect(() => saveSdr(sdr), [sdr]);
+
+  /** Procura as gravações das ligações recentes que ainda não têm gravação ligada. */
+  async function syncRecordings() {
+    const pendingContacts = contactsRef.current.filter(
+      (c) => c.calledAt && !c.recording && Date.now() - Date.parse(c.at) < 24 * 60 * 60_000,
+    );
+    if (!pendingContacts.length) return;
+    const since = Math.min(...pendingContacts.map((c) => Date.parse(c.calledAt!))) - 60_000;
+    try {
+      const linked = linkRecordings(contactsRef.current, await findRecordings(since));
+      if (linked) {
+        setContacts(linked);
+        saveContacts(linked);
+      }
+    } catch {
+      setError("Permita o acesso às gravações para o discador ligar cada gravação ao lead.");
+    }
+  }
+
+  useEffect(() => {
+    syncRecordings();
+    const onVisible = () => document.visibilityState === "visible" && syncRecordings();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -85,10 +114,12 @@ export default function App() {
     setStatus("");
     setNote("");
     setCalled(false);
+    calledAtRef.current = undefined;
   }
 
   function call(lead: Lead | undefined = current) {
     if (!lead?.e164) return;
+    calledAtRef.current = new Date().toISOString();
     openExternal(`tel:${lead.e164}`);
     setCalled(true);
   }
@@ -105,11 +136,23 @@ export default function App() {
     const now = new Date();
     const next = [
       ...contacts,
-      { at: now.toISOString(), date: formatDate(now), name: current.name, phone: current.e164, status, note, sdr },
+      {
+        at: now.toISOString(),
+        date: formatDate(now),
+        name: current.name,
+        phone: current.e164,
+        status,
+        note,
+        sdr,
+        calledAt: calledAtRef.current,
+      },
     ];
     setContacts(next);
     saveContacts(next);
+    contactsRef.current = next;
     resetLead();
+    // A gravação aparece alguns segundos depois de desligar.
+    setTimeout(syncRecordings, 4000);
     if (autoDial) {
       const following = queue(list?.leads ?? [], summarize(next), MAX_ATTEMPTS).filter((l) => !skipped.includes(l.id))[0];
       if (following) setTimeout(() => call(following), 800);
@@ -138,6 +181,17 @@ export default function App() {
   }
 
   const past = current?.e164 ? history[current.e164] : undefined;
+  const lastRecording = current?.e164
+    ? [...contacts].reverse().find((c) => c.phone === current.e164)?.recording
+    : undefined;
+
+  async function listen(uri: string) {
+    try {
+      await openRecording(uri);
+    } catch {
+      setError("Não foi possível abrir a gravação. Ela pode ter sido apagada do celular.");
+    }
+  }
   const fileInput = (
     <input ref={fileInputRef} type="file" accept=".csv,text/csv,text/comma-separated-values,text/plain" hidden onChange={onFile} />
   );
@@ -210,6 +264,9 @@ export default function App() {
             <p className="last-contact">
               Último contato: <strong>{past.lastStatus}</strong> em {past.lastDate}
               {past.lastNote && ` · ${past.lastNote}`}
+              {lastRecording && (
+                <button className="link listen" onClick={() => listen(lastRecording.uri)}>▶ Ouvir gravação</button>
+              )}
             </p>
           )}
           {current.details.length > 0 && (
@@ -251,6 +308,27 @@ export default function App() {
             </label>
           </div>
         </section>
+      )}
+
+      {todayContacts.length > 0 && (
+        <details className="card queue-card">
+          <summary>Contatos de hoje ({todayContacts.length})</summary>
+          <ul className="queue">
+            {[...todayContacts].reverse().map((c) => (
+              <li key={c.at}>
+                <span>
+                  {c.name || c.phone}
+                  <span className="muted"> · {c.date.slice(-5)} · {c.status}</span>
+                </span>
+                {c.recording ? (
+                  <button className="link listen" onClick={() => listen(c.recording!.uri)}>▶ Ouvir</button>
+                ) : c.calledAt ? (
+                  <span className="muted">sem gravação</span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
 
       {list && (

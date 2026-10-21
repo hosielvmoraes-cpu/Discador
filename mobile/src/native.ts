@@ -1,4 +1,4 @@
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
 import { Share } from "@capacitor/share";
 
@@ -24,4 +24,24 @@ export async function shareCsv(fileName: string, content: string) {
     encoding: Encoding.UTF8,
   });
   await Share.share({ title: fileName, files: [uri], dialogTitle: "Salvar resultados" });
+}
+
+export type CallRecording = { uri: string; name: string; addedAt: number; durationMs: number };
+
+type CallRecordingsPlugin = {
+  find(options: { since: number }): Promise<{ recordings: CallRecording[] }>;
+  open(options: { uri: string }): Promise<void>;
+};
+
+/** Plugin nativo do app (android/.../CallRecordingsPlugin.java). No navegador não há gravações. */
+const CallRecordings = registerPlugin<CallRecordingsPlugin>("CallRecordings");
+
+/** Gravações de chamada feitas pelo app Telefone do aparelho desde `since` (ms). */
+export async function findRecordings(since: number): Promise<CallRecording[]> {
+  if (!Capacitor.isNativePlatform()) return [];
+  return (await CallRecordings.find({ since })).recordings;
+}
+
+export async function openRecording(uri: string) {
+  await CallRecordings.open({ uri });
 }

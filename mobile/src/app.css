@@ -34,3 +34,4 @@ main.app h1 { font-size: 20px; }
 .queue-card .queue { margin-top: 8px; }
 .toolbar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .toolbar button { justify-content: center; font-size: 14px; padding: 12px 6px; }
+.listen { display: inline-block; margin-left: 8px; font-weight: 600; text-decoration: none; }
