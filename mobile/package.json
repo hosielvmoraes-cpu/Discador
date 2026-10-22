@@ -15,7 +15,8 @@
     "@capacitor/share": "^8.0.3",
     "libphonenumber-js": "^1.12.38",
     "react": "^19.1.1",
-    "react-dom": "^19.1.1"
+    "react-dom": "^19.1.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.3",

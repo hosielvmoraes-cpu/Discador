@@ -35,6 +35,11 @@ const WHATSAPP_TEMPLATE = "Olá {nome}, tudo bem? Aqui é {sdr} da Stronix.";
 /** Lê o arquivo como UTF-8 e, se vier com caracteres quebrados, como Windows-1252 (Excel antigo). */
 async function readText(file: File): Promise<string> {
   const buffer = await file.arrayBuffer();
+  if (/\.xlsx?$/i.test(file.name)) {
+    const XLSX = await import("xlsx");
+    const book = XLSX.read(buffer, { type: "array" });
+    return XLSX.utils.sheet_to_csv(book.Sheets[book.SheetNames[0]], { FS: ";", blankrows: false });
+  }
   const utf8 = new TextDecoder("utf-8").decode(buffer);
   return utf8.includes("�") ? new TextDecoder("windows-1252").decode(buffer) : utf8;
 }
@@ -98,7 +103,17 @@ export default function App() {
     e.target.value = "";
     if (!file) return;
     setError("");
-    const leads = importLeads(await readText(file));
+    if (/\.pdf$/i.test(file.name)) {
+      setError("O app não lê PDF. Use a planilha em CSV ou Excel (.xlsx ou .xls).");
+      return;
+    }
+    let leads;
+    try {
+      leads = importLeads(await readText(file));
+    } catch {
+      setError("Não consegui abrir esse arquivo. Use a planilha em CSV ou Excel (.xlsx ou .xls).");
+      return;
+    }
     if (!leads.length || leads.every((l) => !l.e164)) {
       setError("Não encontrei leads com telefone nesse arquivo. Ele precisa de uma coluna Nome e uma de WhatsApp ou Telefone.");
       return;
@@ -193,7 +208,7 @@ export default function App() {
     }
   }
   const fileInput = (
-    <input ref={fileInputRef} type="file" accept=".csv,text/csv,text/comma-separated-values,text/plain" hidden onChange={onFile} />
+    <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls,text/csv,text/comma-separated-values,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" hidden onChange={onFile} />
   );
   const pickFile = () => fileInputRef.current?.click();
 
@@ -240,11 +255,11 @@ export default function App() {
         <section className="card hero">
           <p className="hero-title">Comece subindo a lista de leads</p>
           <ol className="howto">
-            <li>No Stronilead, exporte a lista em CSV.</li>
+            <li>No Stronilead, exporte a lista em CSV ou Excel.</li>
             <li>Toque no botão abaixo e escolha o arquivo (pode estar no Google Drive).</li>
             <li>O app mostra um lead por vez. É só ligar e registrar como foi.</li>
           </ol>
-          <button className="btn-primary btn-big" onClick={pickFile}>Escolher lista (CSV)</button>
+          <button className="btn-primary btn-big" onClick={pickFile}>Escolher lista (CSV ou Excel)</button>
         </section>
       ) : !current ? (
         <section className="card hero">
